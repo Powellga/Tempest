@@ -1,0 +1,1788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEMPEST 2025</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Press Start 2P', monospace;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        canvas {
+            display: block;
+        }
+        
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            color: #888;
+            font-size: 10px;
+            text-align: center;
+            font-family: 'Press Start 2P', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+    <div id="instructions">
+        ← → MOVE | SPACE FIRE | Z SUPERZAPPER
+    </div>
+
+    <script>
+        // ============================================
+        // TEMPEST 2025 - Faithful 1981 Atari Replica
+        // ============================================
+        
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas size
+        canvas.width = 800;
+        canvas.height = 800;
+        
+        // ============================================
+        // AUDIO ENGINE - Authentic Tempest Sounds
+        // ============================================
+        
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.initialized = false;
+            }
+            
+            init() {
+                if (this.initialized) return;
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                this.initialized = true;
+            }
+            
+            // Player shot sound - sharp zap
+            playShoot() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(1200, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(200, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            }
+            
+            // Enemy destroyed - explosion
+            playEnemyDeath() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const noise = this.ctx.createOscillator();
+                
+                osc.connect(gain);
+                noise.connect(gain);
+                gain.connect(this.ctx.destination);
+                
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.2);
+                
+                noise.type = 'triangle';
+                noise.frequency.setValueAtTime(100, this.ctx.currentTime);
+                noise.frequency.exponentialRampToValueAtTime(20, this.ctx.currentTime + 0.2);
+                
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+                
+                osc.start();
+                noise.start();
+                osc.stop(this.ctx.currentTime + 0.2);
+                noise.stop(this.ctx.currentTime + 0.2);
+            }
+            
+            // Player death - descending explosion
+            playPlayerDeath() {
+                if (!this.ctx) return;
+                for (let i = 0; i < 5; i++) {
+                    setTimeout(() => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(300 - i * 40, this.ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.15);
+                        gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                        osc.start();
+                        osc.stop(this.ctx.currentTime + 0.15);
+                    }, i * 100);
+                }
+            }
+            
+            // Superzapper - massive sweep
+            playSuperzapper() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(2000, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.5);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.5);
+            }
+            
+            // Enemy spawn warning
+            playSpawn() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.setValueAtTime(200, this.ctx.currentTime + 0.05);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            }
+            
+            // Level complete fanfare
+            playLevelComplete() {
+                if (!this.ctx) return;
+                const notes = [523, 659, 784, 1047];
+                notes.forEach((freq, i) => {
+                    setTimeout(() => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+                        osc.start();
+                        osc.stop(this.ctx.currentTime + 0.2);
+                    }, i * 150);
+                });
+            }
+            
+            // Flipper movement sound
+            playFlipperMove() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(80, this.ctx.currentTime);
+                osc.frequency.setValueAtTime(100, this.ctx.currentTime + 0.02);
+                gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.04);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.04);
+            }
+            
+            // Pulsar pulse sound
+            playPulsar() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(60, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+            
+            // Ambient tube hum
+            playAmbient() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(55, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.02, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 2);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 2);
+            }
+        }
+        
+        const audio = new AudioEngine();
+        
+        // ============================================
+        // LEVEL DEFINITIONS - Tube Shapes
+        // ============================================
+        
+        const LEVEL_SHAPES = [
+            // Level 1: Circle (16 segments)
+            { type: 'circle', segments: 16, open: false, color: '#00f' },
+            // Level 2: Square
+            { type: 'square', segments: 16, open: false, color: '#f00' },
+            // Level 3: Plus
+            { type: 'plus', segments: 16, open: false, color: '#ff0' },
+            // Level 4: Bow tie / Figure 8
+            { type: 'bowtie', segments: 16, open: false, color: '#0f0' },
+            // Level 5: Cross
+            { type: 'cross', segments: 16, open: false, color: '#f0f' },
+            // Level 6: Triangle
+            { type: 'triangle', segments: 15, open: false, color: '#0ff' },
+            // Level 7: Clover
+            { type: 'clover', segments: 16, open: false, color: '#f80' },
+            // Level 8: V shape (open)
+            { type: 'vee', segments: 13, open: true, color: '#08f' },
+            // Level 9: Steps
+            { type: 'steps', segments: 16, open: false, color: '#8f0' },
+            // Level 10: Heart
+            { type: 'heart', segments: 16, open: false, color: '#f08' },
+            // Level 11: Star
+            { type: 'star', segments: 16, open: false, color: '#80f' },
+            // Level 12: W shape (open)
+            { type: 'wshape', segments: 15, open: true, color: '#ff0' },
+            // Level 13: Flat (open)
+            { type: 'flat', segments: 9, open: true, color: '#0ff' },
+            // Level 14: U shape (open)
+            { type: 'ushape', segments: 11, open: true, color: '#f0f' },
+            // Level 15: Irregular
+            { type: 'irregular', segments: 16, open: false, color: '#0f0' },
+            // Level 16: Infinity
+            { type: 'infinity', segments: 16, open: false, color: '#00f' },
+        ];
+        
+        // ============================================
+        // GAME STATE
+        // ============================================
+        
+        const game = {
+            state: 'title', // title, playing, levelComplete, gameOver, warp
+            score: 0,
+            highScore: parseInt(localStorage.getItem('tempestHighScore')) || 0,
+            lives: 3,
+            level: 1,
+            superzappers: 2,
+            player: null,
+            enemies: [],
+            bullets: [],
+            spikes: [],
+            particles: [],
+            tube: null,
+            enemySpawnTimer: 0,
+            enemySpawnDelay: 60,
+            enemiesRemaining: 0,
+            levelEnemyCount: 0,
+            warpProgress: 0,
+            flashTimer: 0,
+            levelSelectMode: false,
+            selectedLevel: 1
+        };
+        
+        // ============================================
+        // INPUT HANDLING
+        // ============================================
+        
+        const keys = {
+            left: false,
+            right: false,
+            fire: false,
+            superzapper: false
+        };
+        
+        let firePressed = false;
+        let zapPressed = false;
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowLeft') keys.left = true;
+            if (e.code === 'ArrowRight') keys.right = true;
+            if (e.code === 'Space') {
+                keys.fire = true;
+                e.preventDefault();
+            }
+            if (e.code === 'KeyZ') {
+                keys.superzapper = true;
+                e.preventDefault();
+            }
+            
+            // Start game on any key from title
+            if (game.state === 'title') {
+                audio.init();
+                if (e.code === 'Space') {
+                    if (game.levelSelectMode) {
+                        startGame(game.selectedLevel);
+                    } else {
+                        game.levelSelectMode = true;
+                    }
+                } else if (game.levelSelectMode) {
+                    if (e.code === 'ArrowLeft' && game.selectedLevel > 1) {
+                        game.selectedLevel--;
+                    } else if (e.code === 'ArrowRight' && game.selectedLevel < 16) {
+                        game.selectedLevel++;
+                    }
+                }
+            }
+            
+            // Restart from game over
+            if (game.state === 'gameOver' && e.code === 'Space') {
+                audio.init();
+                game.state = 'title';
+                game.levelSelectMode = false;
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft') keys.left = false;
+            if (e.code === 'ArrowRight') keys.right = false;
+            if (e.code === 'Space') {
+                keys.fire = false;
+                firePressed = false;
+            }
+            if (e.code === 'KeyZ') {
+                keys.superzapper = false;
+                zapPressed = false;
+            }
+        });
+        
+        // ============================================
+        // TUBE GENERATION
+        // ============================================
+        
+        class Tube {
+            constructor(levelIndex) {
+                const levelDef = LEVEL_SHAPES[(levelIndex - 1) % LEVEL_SHAPES.length];
+                this.segments = levelDef.segments;
+                this.open = levelDef.open;
+                this.color = levelDef.color;
+                this.centerX = canvas.width / 2;
+                this.centerY = canvas.height / 2;
+                this.nearRadius = 280;
+                this.farRadius = 40;
+                this.depth = 400;
+                
+                this.lanes = this.generateLanes(levelDef.type);
+            }
+            
+            generateLanes(type) {
+                const lanes = [];
+                const segments = this.segments;
+                
+                for (let i = 0; i < segments; i++) {
+                    let angle1, angle2;
+                    let x1Near, y1Near, x2Near, y2Near;
+                    let x1Far, y1Far, x2Far, y2Far;
+                    
+                    switch(type) {
+                        case 'circle':
+                            angle1 = (i / segments) * Math.PI * 2 - Math.PI / 2;
+                            angle2 = ((i + 1) / segments) * Math.PI * 2 - Math.PI / 2;
+                            x1Near = this.centerX + Math.cos(angle1) * this.nearRadius;
+                            y1Near = this.centerY + Math.sin(angle1) * this.nearRadius;
+                            x2Near = this.centerX + Math.cos(angle2) * this.nearRadius;
+                            y2Near = this.centerY + Math.sin(angle2) * this.nearRadius;
+                            x1Far = this.centerX + Math.cos(angle1) * this.farRadius;
+                            y1Far = this.centerY + Math.sin(angle1) * this.farRadius;
+                            x2Far = this.centerX + Math.cos(angle2) * this.farRadius;
+                            y2Far = this.centerY + Math.sin(angle2) * this.farRadius;
+                            break;
+                            
+                        case 'square':
+                            const squarePoints = this.getSquarePoints(segments);
+                            const sp1 = squarePoints[i];
+                            const sp2 = squarePoints[(i + 1) % segments];
+                            x1Near = sp1.x; y1Near = sp1.y;
+                            x2Near = sp2.x; y2Near = sp2.y;
+                            const sf1 = this.scalePoint(sp1, 0.15);
+                            const sf2 = this.scalePoint(sp2, 0.15);
+                            x1Far = sf1.x; y1Far = sf1.y;
+                            x2Far = sf2.x; y2Far = sf2.y;
+                            break;
+                            
+                        case 'plus':
+                            const plusPoints = this.getPlusPoints(segments);
+                            const pp1 = plusPoints[i];
+                            const pp2 = plusPoints[(i + 1) % segments];
+                            x1Near = pp1.x; y1Near = pp1.y;
+                            x2Near = pp2.x; y2Near = pp2.y;
+                            const pf1 = this.scalePoint(pp1, 0.15);
+                            const pf2 = this.scalePoint(pp2, 0.15);
+                            x1Far = pf1.x; y1Far = pf1.y;
+                            x2Far = pf2.x; y2Far = pf2.y;
+                            break;
+                            
+                        case 'triangle':
+                            const triPoints = this.getTrianglePoints(segments);
+                            const tp1 = triPoints[i];
+                            const tp2 = triPoints[(i + 1) % segments];
+                            x1Near = tp1.x; y1Near = tp1.y;
+                            x2Near = tp2.x; y2Near = tp2.y;
+                            const tf1 = this.scalePoint(tp1, 0.15);
+                            const tf2 = this.scalePoint(tp2, 0.15);
+                            x1Far = tf1.x; y1Far = tf1.y;
+                            x2Far = tf2.x; y2Far = tf2.y;
+                            break;
+                            
+                        case 'vee':
+                            const veePoints = this.getVeePoints(segments);
+                            const vp1 = veePoints[i];
+                            const vp2 = veePoints[i + 1];
+                            x1Near = vp1.x; y1Near = vp1.y;
+                            x2Near = vp2.x; y2Near = vp2.y;
+                            const vf1 = this.scalePoint(vp1, 0.15);
+                            const vf2 = this.scalePoint(vp2, 0.15);
+                            x1Far = vf1.x; y1Far = vf1.y;
+                            x2Far = vf2.x; y2Far = vf2.y;
+                            break;
+                            
+                        case 'flat':
+                            const flatPoints = this.getFlatPoints(segments);
+                            const flp1 = flatPoints[i];
+                            const flp2 = flatPoints[i + 1];
+                            x1Near = flp1.x; y1Near = flp1.y;
+                            x2Near = flp2.x; y2Near = flp2.y;
+                            const flf1 = this.scalePoint(flp1, 0.15);
+                            const flf2 = this.scalePoint(flp2, 0.15);
+                            x1Far = flf1.x; y1Far = flf1.y;
+                            x2Far = flf2.x; y2Far = flf2.y;
+                            break;
+                            
+                        case 'ushape':
+                            const uPoints = this.getUPoints(segments);
+                            const up1 = uPoints[i];
+                            const up2 = uPoints[i + 1];
+                            x1Near = up1.x; y1Near = up1.y;
+                            x2Near = up2.x; y2Near = up2.y;
+                            const uf1 = this.scalePoint(up1, 0.15);
+                            const uf2 = this.scalePoint(up2, 0.15);
+                            x1Far = uf1.x; y1Far = uf1.y;
+                            x2Far = uf2.x; y2Far = uf2.y;
+                            break;
+                            
+                        case 'wshape':
+                            const wPoints = this.getWPoints(segments);
+                            const wp1 = wPoints[i];
+                            const wp2 = wPoints[i + 1];
+                            x1Near = wp1.x; y1Near = wp1.y;
+                            x2Near = wp2.x; y2Near = wp2.y;
+                            const wf1 = this.scalePoint(wp1, 0.15);
+                            const wf2 = this.scalePoint(wp2, 0.15);
+                            x1Far = wf1.x; y1Far = wf1.y;
+                            x2Far = wf2.x; y2Far = wf2.y;
+                            break;
+                            
+                        case 'bowtie':
+                            const bowtiePoints = this.getBowtiePoints(segments);
+                            const bp1 = bowtiePoints[i];
+                            const bp2 = bowtiePoints[(i + 1) % segments];
+                            x1Near = bp1.x; y1Near = bp1.y;
+                            x2Near = bp2.x; y2Near = bp2.y;
+                            const bf1 = this.scalePoint(bp1, 0.15);
+                            const bf2 = this.scalePoint(bp2, 0.15);
+                            x1Far = bf1.x; y1Far = bf1.y;
+                            x2Far = bf2.x; y2Far = bf2.y;
+                            break;
+                            
+                        case 'star':
+                            const starPoints = this.getStarPoints(segments);
+                            const stp1 = starPoints[i];
+                            const stp2 = starPoints[(i + 1) % segments];
+                            x1Near = stp1.x; y1Near = stp1.y;
+                            x2Near = stp2.x; y2Near = stp2.y;
+                            const stf1 = this.scalePoint(stp1, 0.15);
+                            const stf2 = this.scalePoint(stp2, 0.15);
+                            x1Far = stf1.x; y1Far = stf1.y;
+                            x2Far = stf2.x; y2Far = stf2.y;
+                            break;
+                            
+                        default:
+                            // Default to circle for other shapes
+                            angle1 = (i / segments) * Math.PI * 2 - Math.PI / 2;
+                            angle2 = ((i + 1) / segments) * Math.PI * 2 - Math.PI / 2;
+                            x1Near = this.centerX + Math.cos(angle1) * this.nearRadius;
+                            y1Near = this.centerY + Math.sin(angle1) * this.nearRadius;
+                            x2Near = this.centerX + Math.cos(angle2) * this.nearRadius;
+                            y2Near = this.centerY + Math.sin(angle2) * this.nearRadius;
+                            x1Far = this.centerX + Math.cos(angle1) * this.farRadius;
+                            y1Far = this.centerY + Math.sin(angle1) * this.farRadius;
+                            x2Far = this.centerX + Math.cos(angle2) * this.farRadius;
+                            y2Far = this.centerY + Math.sin(angle2) * this.farRadius;
+                    }
+                    
+                    lanes.push({
+                        nearLeft: { x: x1Near, y: y1Near },
+                        nearRight: { x: x2Near, y: y2Near },
+                        farLeft: { x: x1Far, y: y1Far },
+                        farRight: { x: x2Far, y: y2Far }
+                    });
+                }
+                
+                return lanes;
+            }
+            
+            scalePoint(point, scale) {
+                return {
+                    x: this.centerX + (point.x - this.centerX) * scale,
+                    y: this.centerY + (point.y - this.centerY) * scale
+                };
+            }
+            
+            getSquarePoints(segments) {
+                const points = [];
+                const size = this.nearRadius;
+                const perSide = segments / 4;
+                
+                for (let i = 0; i < perSide; i++) {
+                    points.push({
+                        x: this.centerX - size + (i / perSide) * size * 2,
+                        y: this.centerY - size
+                    });
+                }
+                for (let i = 0; i < perSide; i++) {
+                    points.push({
+                        x: this.centerX + size,
+                        y: this.centerY - size + (i / perSide) * size * 2
+                    });
+                }
+                for (let i = 0; i < perSide; i++) {
+                    points.push({
+                        x: this.centerX + size - (i / perSide) * size * 2,
+                        y: this.centerY + size
+                    });
+                }
+                for (let i = 0; i < perSide; i++) {
+                    points.push({
+                        x: this.centerX - size,
+                        y: this.centerY + size - (i / perSide) * size * 2
+                    });
+                }
+                
+                return points;
+            }
+            
+            getPlusPoints(segments) {
+                const points = [];
+                const outer = this.nearRadius;
+                const inner = this.nearRadius * 0.4;
+                
+                const plusShape = [
+                    { x: -inner, y: -outer }, { x: inner, y: -outer },
+                    { x: inner, y: -inner }, { x: outer, y: -inner },
+                    { x: outer, y: inner }, { x: inner, y: inner },
+                    { x: inner, y: outer }, { x: -inner, y: outer },
+                    { x: -inner, y: inner }, { x: -outer, y: inner },
+                    { x: -outer, y: -inner }, { x: -inner, y: -inner }
+                ];
+                
+                const totalLength = plusShape.length;
+                for (let i = 0; i < segments; i++) {
+                    const t = (i / segments) * totalLength;
+                    const idx = Math.floor(t) % totalLength;
+                    const nextIdx = (idx + 1) % totalLength;
+                    const frac = t - Math.floor(t);
+                    
+                    points.push({
+                        x: this.centerX + plusShape[idx].x + (plusShape[nextIdx].x - plusShape[idx].x) * frac,
+                        y: this.centerY + plusShape[idx].y + (plusShape[nextIdx].y - plusShape[idx].y) * frac
+                    });
+                }
+                
+                return points;
+            }
+            
+            getTrianglePoints(segments) {
+                const points = [];
+                const radius = this.nearRadius;
+                
+                const triVerts = [
+                    { x: this.centerX, y: this.centerY - radius },
+                    { x: this.centerX + radius * Math.cos(Math.PI/6), y: this.centerY + radius * Math.sin(Math.PI/6) },
+                    { x: this.centerX - radius * Math.cos(Math.PI/6), y: this.centerY + radius * Math.sin(Math.PI/6) }
+                ];
+                
+                const perSide = Math.floor(segments / 3);
+                for (let side = 0; side < 3; side++) {
+                    const start = triVerts[side];
+                    const end = triVerts[(side + 1) % 3];
+                    const segs = side === 2 ? segments - perSide * 2 : perSide;
+                    for (let i = 0; i < segs; i++) {
+                        points.push({
+                            x: start.x + (end.x - start.x) * (i / segs),
+                            y: start.y + (end.y - start.y) * (i / segs)
+                        });
+                    }
+                }
+                
+                return points;
+            }
+            
+            getVeePoints(segments) {
+                const points = [];
+                const width = this.nearRadius * 2;
+                const height = this.nearRadius * 1.5;
+                
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    let x, y;
+                    if (t <= 0.5) {
+                        x = this.centerX - width/2 + t * width;
+                        y = this.centerY - height/2 + t * height * 2;
+                    } else {
+                        x = this.centerX - width/2 + t * width;
+                        y = this.centerY + height/2 - (t - 0.5) * height * 2;
+                    }
+                    points.push({ x, y });
+                }
+                
+                return points;
+            }
+            
+            getFlatPoints(segments) {
+                const points = [];
+                const width = this.nearRadius * 2.5;
+                
+                for (let i = 0; i <= segments; i++) {
+                    points.push({
+                        x: this.centerX - width/2 + (i / segments) * width,
+                        y: this.centerY + 100
+                    });
+                }
+                
+                return points;
+            }
+            
+            getUPoints(segments) {
+                const points = [];
+                const width = this.nearRadius * 1.8;
+                const height = this.nearRadius * 1.5;
+                
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    let x, y;
+                    
+                    if (t < 0.25) {
+                        x = this.centerX - width/2;
+                        y = this.centerY - height/2 + t * 4 * height * 0.5;
+                    } else if (t < 0.75) {
+                        const angle = Math.PI + (t - 0.25) * 2 * Math.PI;
+                        x = this.centerX + Math.cos(angle) * width/2;
+                        y = this.centerY + height/4 + Math.sin(angle) * height/4;
+                    } else {
+                        x = this.centerX + width/2;
+                        y = this.centerY + (1 - t) * 4 * height * 0.5 - height/2;
+                    }
+                    points.push({ x, y });
+                }
+                
+                return points;
+            }
+            
+            getWPoints(segments) {
+                const points = [];
+                const width = this.nearRadius * 2.2;
+                const height = this.nearRadius * 1.2;
+                
+                for (let i = 0; i <= segments; i++) {
+                    const t = i / segments;
+                    let x = this.centerX - width/2 + t * width;
+                    let y;
+                    
+                    if (t < 0.25) {
+                        y = this.centerY - height/2 + t * 4 * height;
+                    } else if (t < 0.5) {
+                        y = this.centerY + height/2 - (t - 0.25) * 4 * height;
+                    } else if (t < 0.75) {
+                        y = this.centerY - height/2 + (t - 0.5) * 4 * height;
+                    } else {
+                        y = this.centerY + height/2 - (t - 0.75) * 4 * height;
+                    }
+                    points.push({ x, y });
+                }
+                
+                return points;
+            }
+            
+            getBowtiePoints(segments) {
+                const points = [];
+                const radius = this.nearRadius;
+                
+                for (let i = 0; i < segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2;
+                    const r = radius * (0.5 + 0.5 * Math.abs(Math.cos(angle)));
+                    points.push({
+                        x: this.centerX + Math.cos(angle) * r,
+                        y: this.centerY + Math.sin(angle) * r
+                    });
+                }
+                
+                return points;
+            }
+            
+            getStarPoints(segments) {
+                const points = [];
+                const outerRadius = this.nearRadius;
+                const innerRadius = this.nearRadius * 0.5;
+                const spikes = 8;
+                
+                for (let i = 0; i < segments; i++) {
+                    const angle = (i / segments) * Math.PI * 2 - Math.PI/2;
+                    const spikeAngle = angle * spikes / (Math.PI * 2);
+                    const r = innerRadius + (outerRadius - innerRadius) * (0.5 + 0.5 * Math.cos(spikeAngle * Math.PI * 2));
+                    points.push({
+                        x: this.centerX + Math.cos(angle) * r,
+                        y: this.centerY + Math.sin(angle) * r
+                    });
+                }
+                
+                return points;
+            }
+            
+            getPositionInLane(lane, depth) {
+                const l = this.lanes[lane];
+                const t = depth;
+                
+                const leftX = l.nearLeft.x + (l.farLeft.x - l.nearLeft.x) * t;
+                const leftY = l.nearLeft.y + (l.farLeft.y - l.nearLeft.y) * t;
+                const rightX = l.nearRight.x + (l.farRight.x - l.nearRight.x) * t;
+                const rightY = l.nearRight.y + (l.farRight.y - l.nearRight.y) * t;
+                
+                return {
+                    x: (leftX + rightX) / 2,
+                    y: (leftY + rightY) / 2,
+                    leftX, leftY, rightX, rightY
+                };
+            }
+            
+            draw() {
+                this.lanes.forEach((lane, i) => {
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 2;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = this.color;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(lane.nearLeft.x, lane.nearLeft.y);
+                    ctx.lineTo(lane.farLeft.x, lane.farLeft.y);
+                    ctx.stroke();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(lane.nearRight.x, lane.nearRight.y);
+                    ctx.lineTo(lane.farRight.x, lane.farRight.y);
+                    ctx.stroke();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(lane.nearLeft.x, lane.nearLeft.y);
+                    ctx.lineTo(lane.nearRight.x, lane.nearRight.y);
+                    ctx.stroke();
+                    
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(lane.farLeft.x, lane.farLeft.y);
+                    ctx.lineTo(lane.farRight.x, lane.farRight.y);
+                    ctx.stroke();
+                });
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        // ============================================
+        // PLAYER (BLASTER/CLAW)
+        // ============================================
+        
+        class Player {
+            constructor(tube) {
+                this.tube = tube;
+                this.lane = 0;
+                this.moveDelay = 0;
+                this.fireDelay = 0;
+                this.alive = true;
+                this.deathTimer = 0;
+            }
+            
+            update() {
+                if (!this.alive) {
+                    this.deathTimer++;
+                    return;
+                }
+                
+                if (this.moveDelay > 0) this.moveDelay--;
+                
+                if (keys.left && this.moveDelay === 0) {
+                    if (this.tube.open) {
+                        if (this.lane > 0) this.lane--;
+                    } else {
+                        this.lane = (this.lane - 1 + this.tube.segments) % this.tube.segments;
+                    }
+                    this.moveDelay = 4;
+                }
+                
+                if (keys.right && this.moveDelay === 0) {
+                    if (this.tube.open) {
+                        if (this.lane < this.tube.segments - 1) this.lane++;
+                    } else {
+                        this.lane = (this.lane + 1) % this.tube.segments;
+                    }
+                    this.moveDelay = 4;
+                }
+                
+                if (this.fireDelay > 0) this.fireDelay--;
+                
+                if (keys.fire && this.fireDelay === 0 && !firePressed) {
+                    this.fire();
+                    this.fireDelay = 8;
+                    firePressed = true;
+                }
+                
+                if (keys.superzapper && !zapPressed && game.superzappers > 0) {
+                    this.superzap();
+                    zapPressed = true;
+                }
+            }
+            
+            fire() {
+                audio.playShoot();
+                game.bullets.push(new Bullet(this.lane, this.tube));
+            }
+            
+            superzap() {
+                audio.playSuperzapper();
+                game.superzappers--;
+                game.flashTimer = 20;
+                
+                game.enemies.forEach(enemy => {
+                    if (enemy.depth < 0.9) {
+                        enemy.alive = false;
+                        game.score += enemy.points;
+                        createExplosion(enemy.getPosition().x, enemy.getPosition().y, enemy.color);
+                    }
+                });
+            }
+            
+            die() {
+                if (!this.alive) return;
+                this.alive = false;
+                audio.playPlayerDeath();
+                const pos = this.getPosition();
+                createExplosion(pos.x, pos.y, '#ff0', 30);
+            }
+            
+            getPosition() {
+                return this.tube.getPositionInLane(this.lane, 0);
+            }
+            
+            draw() {
+                if (!this.alive) return;
+                
+                const pos = this.getPosition();
+                const lane = this.tube.lanes[this.lane];
+                
+                ctx.strokeStyle = '#ff0';
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#ff0';
+                
+                ctx.beginPath();
+                ctx.moveTo(lane.nearLeft.x, lane.nearLeft.y);
+                ctx.lineTo(pos.x, pos.y - 15);
+                ctx.lineTo(lane.nearRight.x, lane.nearRight.y);
+                ctx.stroke();
+                
+                const tipLength = 20;
+                const angle1 = Math.atan2(lane.farLeft.y - lane.nearLeft.y, lane.farLeft.x - lane.nearLeft.x);
+                const angle2 = Math.atan2(lane.farRight.y - lane.nearRight.y, lane.farRight.x - lane.nearRight.x);
+                
+                ctx.beginPath();
+                ctx.moveTo(lane.nearLeft.x, lane.nearLeft.y);
+                ctx.lineTo(lane.nearLeft.x + Math.cos(angle1) * tipLength, lane.nearLeft.y + Math.sin(angle1) * tipLength);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(lane.nearRight.x, lane.nearRight.y);
+                ctx.lineTo(lane.nearRight.x + Math.cos(angle2) * tipLength, lane.nearRight.y + Math.sin(angle2) * tipLength);
+                ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        // ============================================
+        // BULLET
+        // ============================================
+        
+        class Bullet {
+            constructor(lane, tube) {
+                this.lane = lane;
+                this.tube = tube;
+                this.depth = 0;
+                this.speed = 0.04;
+                this.alive = true;
+            }
+            
+            update() {
+                this.depth += this.speed;
+                if (this.depth > 1) {
+                    this.alive = false;
+                }
+            }
+            
+            getPosition() {
+                return this.tube.getPositionInLane(this.lane, this.depth);
+            }
+            
+            draw() {
+                const pos = this.getPosition();
+                
+                ctx.fillStyle = '#ff0';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#ff0';
+                
+                const size = 4 * (1 - this.depth * 0.7);
+                ctx.fillRect(pos.x - size/2, pos.y - size/2, size, size);
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        // ============================================
+        // ENEMIES
+        // ============================================
+        
+        class Flipper {
+            constructor(lane, tube) {
+                this.lane = lane;
+                this.tube = tube;
+                this.depth = 1;
+                this.speed = 0.001 + Math.random() * 0.001 + game.level * 0.0004;
+                this.alive = true;
+                this.color = '#f00';
+                this.points = 150;
+                this.flipTimer = 0;
+                this.flipDelay = 60 + Math.random() * 120;
+                this.atEdge = false;
+            }
+            
+            update() {
+                this.depth -= this.speed;
+                
+                this.flipTimer++;
+                if (this.flipTimer > this.flipDelay && this.depth < 0.8) {
+                    this.flip();
+                    this.flipTimer = 0;
+                    this.flipDelay = 60 + Math.random() * 120;
+                }
+                
+                if (this.depth <= 0) {
+                    this.depth = 0;
+                    this.atEdge = true;
+                    
+                    if (Math.random() < 0.02) {
+                        if (this.lane < game.player.lane) {
+                            this.lane = (this.lane + 1) % this.tube.segments;
+                        } else if (this.lane > game.player.lane) {
+                            this.lane = (this.lane - 1 + this.tube.segments) % this.tube.segments;
+                        }
+                    }
+                    
+                    if (this.lane === game.player.lane) {
+                        game.player.die();
+                    }
+                }
+            }
+            
+            flip() {
+                const dir = Math.random() < 0.5 ? -1 : 1;
+                if (this.tube.open) {
+                    const newLane = this.lane + dir;
+                    if (newLane >= 0 && newLane < this.tube.segments) {
+                        this.lane = newLane;
+                        audio.playFlipperMove();
+                    }
+                } else {
+                    this.lane = (this.lane + dir + this.tube.segments) % this.tube.segments;
+                    audio.playFlipperMove();
+                }
+            }
+            
+            getPosition() {
+                return this.tube.getPositionInLane(this.lane, Math.max(0, this.depth));
+            }
+            
+            draw() {
+                const pos = this.getPosition();
+                const scale = 1 - this.depth * 0.7;
+                
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                
+                const size = 20 * scale;
+                ctx.beginPath();
+                ctx.moveTo(pos.x - size, pos.y - size/2);
+                ctx.lineTo(pos.x + size, pos.y + size/2);
+                ctx.lineTo(pos.x + size, pos.y - size/2);
+                ctx.lineTo(pos.x - size, pos.y + size/2);
+                ctx.closePath();
+                ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        class Tanker {
+            constructor(lane, tube) {
+                this.lane = lane;
+                this.tube = tube;
+                this.depth = 1;
+                this.speed = 0.001 + game.level * 0.0002;
+                this.alive = true;
+                this.color = '#f0f';
+                this.points = 100;
+            }
+            
+            update() {
+                this.depth -= this.speed;
+                
+                if (this.depth <= 0) {
+                    this.depth = 0;
+                    if (this.lane === game.player.lane) {
+                        game.player.die();
+                    }
+                }
+            }
+            
+            onDeath() {
+                const flip1 = new Flipper(this.lane, this.tube);
+                flip1.depth = this.depth;
+                const flip2 = new Flipper(this.lane, this.tube);
+                flip2.depth = this.depth;
+                flip2.flip();
+                game.enemies.push(flip1, flip2);
+            }
+            
+            getPosition() {
+                return this.tube.getPositionInLane(this.lane, Math.max(0, this.depth));
+            }
+            
+            draw() {
+                const pos = this.getPosition();
+                const scale = 1 - this.depth * 0.7;
+                
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                
+                const size = 18 * scale;
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y - size);
+                ctx.lineTo(pos.x + size, pos.y);
+                ctx.lineTo(pos.x, pos.y + size);
+                ctx.lineTo(pos.x - size, pos.y);
+                ctx.closePath();
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y - size/2);
+                ctx.lineTo(pos.x + size/2, pos.y);
+                ctx.lineTo(pos.x, pos.y + size/2);
+                ctx.lineTo(pos.x - size/2, pos.y);
+                ctx.closePath();
+                ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        class Spiker {
+            constructor(lane, tube) {
+                this.lane = lane;
+                this.tube = tube;
+                this.depth = 1;
+                this.speed = 0.002 + game.level * 0.0002;
+                this.alive = true;
+                this.color = '#0f0';
+                this.points = 50;
+                this.spikeDepth = 1;
+                this.retreating = false;
+            }
+            
+            update() {
+                if (this.retreating) {
+                    this.depth += this.speed * 2;
+                    if (this.depth > 1) {
+                        this.alive = false;
+                    }
+                } else {
+                    this.depth -= this.speed;
+                    
+                    if (this.depth < this.spikeDepth) {
+                        this.spikeDepth = this.depth;
+                        this.addSpike();
+                    }
+                    
+                    if (this.depth < 0.15) {
+                        this.retreating = true;
+                    }
+                }
+            }
+            
+            addSpike() {
+                let existingSpike = game.spikes.find(s => s.lane === this.lane);
+                if (existingSpike) {
+                    existingSpike.length = Math.max(existingSpike.length, 1 - this.depth);
+                } else {
+                    game.spikes.push({
+                        lane: this.lane,
+                        length: 0.1,
+                        tube: this.tube
+                    });
+                }
+            }
+            
+            getPosition() {
+                return this.tube.getPositionInLane(this.lane, Math.max(0, this.depth));
+            }
+            
+            draw() {
+                const pos = this.getPosition();
+                const scale = 1 - this.depth * 0.7;
+                
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                
+                const size = 15 * scale;
+                ctx.beginPath();
+                ctx.moveTo(pos.x - size, pos.y);
+                ctx.lineTo(pos.x - size/2, pos.y - size);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.lineTo(pos.x + size/2, pos.y - size);
+                ctx.lineTo(pos.x + size, pos.y);
+                ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        class Fuseball {
+            constructor(lane, tube) {
+                this.lane = lane;
+                this.tube = tube;
+                this.depth = 1;
+                this.speed = 0.004 + game.level * 0.0008;
+                this.alive = true;
+                this.color = '#fff';
+                this.points = 250;
+                this.pulsePhase = 0;
+                this.movingOnEdge = false;
+            }
+            
+            update() {
+                this.pulsePhase += 0.3;
+                
+                if (this.movingOnEdge) {
+                    if (Math.random() < 0.05) {
+                        if (this.lane < game.player.lane) {
+                            this.lane = this.tube.open ? 
+                                Math.min(this.lane + 1, this.tube.segments - 1) :
+                                (this.lane + 1) % this.tube.segments;
+                        } else if (this.lane > game.player.lane) {
+                            this.lane = this.tube.open ?
+                                Math.max(this.lane - 1, 0) :
+                                (this.lane - 1 + this.tube.segments) % this.tube.segments;
+                        }
+                    }
+                    
+                    if (this.lane === game.player.lane) {
+                        game.player.die();
+                    }
+                } else {
+                    this.depth -= this.speed;
+                    
+                    if (this.depth <= 0) {
+                        this.depth = 0;
+                        this.movingOnEdge = true;
+                    }
+                }
+            }
+            
+            getPosition() {
+                return this.tube.getPositionInLane(this.lane, Math.max(0, this.depth));
+            }
+            
+            draw() {
+                const pos = this.getPosition();
+                const scale = 1 - this.depth * 0.7;
+                const pulse = Math.sin(this.pulsePhase) * 0.3 + 1;
+                
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = this.color;
+                
+                const size = 12 * scale * pulse;
+                const spikes = 8;
+                
+                ctx.beginPath();
+                for (let i = 0; i < spikes * 2; i++) {
+                    const angle = (i / (spikes * 2)) * Math.PI * 2;
+                    const r = i % 2 === 0 ? size * 1.5 : size * 0.7;
+                    const x = pos.x + Math.cos(angle) * r;
+                    const y = pos.y + Math.sin(angle) * r;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        class Pulsar {
+            constructor(lane, tube) {
+                this.lane = lane;
+                this.tube = tube;
+                this.depth = 1;
+                this.speed = 0.001 + game.level * 0.00015;
+                this.alive = true;
+                this.color = '#0ff';
+                this.points = 200;
+                this.pulsePhase = 0;
+                this.pulsing = false;
+                this.pulseTimer = 0;
+            }
+            
+            update() {
+                this.depth -= this.speed;
+                this.pulsePhase += 0.1;
+                
+                this.pulseTimer++;
+                if (this.pulseTimer > 120) {
+                    this.pulsing = true;
+                    if (this.pulseTimer > 150) {
+                        this.pulseTimer = 0;
+                        this.pulsing = false;
+                        audio.playPulsar();
+                    }
+                }
+                
+                if (this.pulsing && this.lane === game.player.lane) {
+                    game.player.die();
+                }
+                
+                if (this.depth <= 0) {
+                    this.depth = 0;
+                    if (this.lane === game.player.lane) {
+                        game.player.die();
+                    }
+                }
+            }
+            
+            getPosition() {
+                return this.tube.getPositionInLane(this.lane, Math.max(0, this.depth));
+            }
+            
+            draw() {
+                const pos = this.getPosition();
+                const scale = 1 - this.depth * 0.7;
+                const pulse = Math.sin(this.pulsePhase) * 0.2 + 1;
+                
+                if (this.pulsing) {
+                    const lane = this.tube.lanes[this.lane];
+                    ctx.strokeStyle = '#0ff';
+                    ctx.lineWidth = 4;
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#0ff';
+                    ctx.globalAlpha = 0.5 + Math.sin(this.pulsePhase * 3) * 0.5;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(lane.nearLeft.x, lane.nearLeft.y);
+                    ctx.lineTo(lane.farLeft.x, lane.farLeft.y);
+                    ctx.stroke();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(lane.nearRight.x, lane.nearRight.y);
+                    ctx.lineTo(lane.farRight.x, lane.farRight.y);
+                    ctx.stroke();
+                    
+                    ctx.globalAlpha = 1;
+                }
+                
+                ctx.strokeStyle = this.pulsing ? '#fff' : this.color;
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                
+                const size = 15 * scale * pulse;
+                
+                ctx.beginPath();
+                ctx.moveTo(pos.x - size, pos.y - size/2);
+                ctx.lineTo(pos.x + size, pos.y - size/2);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(pos.x - size, pos.y + size/2);
+                ctx.lineTo(pos.x + size, pos.y + size/2);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(pos.x - size/2, pos.y - size);
+                ctx.lineTo(pos.x - size/2, pos.y + size);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(pos.x + size/2, pos.y - size);
+                ctx.lineTo(pos.x + size/2, pos.y + size);
+                ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        // ============================================
+        // PARTICLES & EFFECTS
+        // ============================================
+        
+        function createExplosion(x, y, color, count = 15) {
+            for (let i = 0; i < count; i++) {
+                const angle = (i / count) * Math.PI * 2;
+                const speed = 2 + Math.random() * 4;
+                game.particles.push({
+                    x, y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    life: 30 + Math.random() * 20,
+                    color,
+                    size: 2 + Math.random() * 3
+                });
+            }
+        }
+        
+        function updateParticles() {
+            game.particles = game.particles.filter(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vx *= 0.95;
+                p.vy *= 0.95;
+                p.life--;
+                return p.life > 0;
+            });
+        }
+        
+        function drawParticles() {
+            game.particles.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 50;
+                ctx.shadowBlur = 5;
+                ctx.shadowColor = p.color;
+                ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+            });
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawSpikes() {
+            game.spikes.forEach(spike => {
+                ctx.strokeStyle = '#0f0';
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#0f0';
+                
+                const startPos = spike.tube.getPositionInLane(spike.lane, 1);
+                const endPos = spike.tube.getPositionInLane(spike.lane, 1 - spike.length);
+                
+                ctx.beginPath();
+                ctx.moveTo(startPos.x, startPos.y);
+                ctx.lineTo(endPos.x, endPos.y);
+                ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+            });
+        }
+        
+        // ============================================
+        // GAME LOGIC
+        // ============================================
+        
+        function startGame(level) {
+            game.state = 'playing';
+            game.level = level;
+            game.score = 0;
+            game.lives = 3;
+            game.superzappers = 2;
+            startLevel();
+        }
+        
+        function startLevel() {
+            game.tube = new Tube(game.level);
+            game.player = new Player(game.tube);
+            game.enemies = [];
+            game.bullets = [];
+            game.spikes = [];
+            game.particles = [];
+            game.enemySpawnTimer = 0;
+            game.enemySpawnDelay = Math.max(30, 60 - game.level * 2);
+            game.levelEnemyCount = 10 + game.level * 3;
+            game.enemiesRemaining = game.levelEnemyCount;
+            game.warpProgress = 0;
+        }
+        
+        function spawnEnemy() {
+            if (game.enemiesRemaining <= 0) return;
+            
+            const lane = Math.floor(Math.random() * game.tube.segments);
+            const enemyTypes = ['flipper'];
+            
+            if (game.level >= 2) enemyTypes.push('tanker');
+            if (game.level >= 3) enemyTypes.push('spiker');
+            if (game.level >= 5) enemyTypes.push('fuseball');
+            if (game.level >= 7) enemyTypes.push('pulsar');
+            
+            const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+            
+            let enemy;
+            switch(type) {
+                case 'flipper': enemy = new Flipper(lane, game.tube); break;
+                case 'tanker': enemy = new Tanker(lane, game.tube); break;
+                case 'spiker': enemy = new Spiker(lane, game.tube); break;
+                case 'fuseball': enemy = new Fuseball(lane, game.tube); break;
+                case 'pulsar': enemy = new Pulsar(lane, game.tube); break;
+            }
+            
+            game.enemies.push(enemy);
+            game.enemiesRemaining--;
+            audio.playSpawn();
+        }
+        
+        function checkCollisions() {
+            game.bullets.forEach(bullet => {
+                if (!bullet.alive) return;
+                
+                game.enemies.forEach(enemy => {
+                    if (!enemy.alive) return;
+                    if (bullet.lane !== enemy.lane) return;
+                    
+                    if (Math.abs(bullet.depth - enemy.depth) < 0.08) {
+                        bullet.alive = false;
+                        enemy.alive = false;
+                        game.score += enemy.points;
+                        audio.playEnemyDeath();
+                        
+                        const pos = enemy.getPosition();
+                        createExplosion(pos.x, pos.y, enemy.color);
+                        
+                        if (enemy.onDeath) {
+                            enemy.onDeath();
+                        }
+                    }
+                });
+                
+                game.spikes.forEach(spike => {
+                    if (bullet.lane === spike.lane && bullet.depth > 0.9) {
+                        bullet.alive = false;
+                        spike.length -= 0.1;
+                        if (spike.length <= 0) {
+                            game.spikes = game.spikes.filter(s => s !== spike);
+                        }
+                    }
+                });
+            });
+        }
+        
+        function updateGame() {
+            if (game.state !== 'playing') return;
+            
+            game.player.update();
+            
+            game.enemySpawnTimer++;
+            if (game.enemySpawnTimer >= game.enemySpawnDelay && game.enemiesRemaining > 0) {
+                spawnEnemy();
+                game.enemySpawnTimer = 0;
+            }
+            
+            game.bullets.forEach(b => b.update());
+            game.bullets = game.bullets.filter(b => b.alive);
+            
+            game.enemies.forEach(e => e.update());
+            game.enemies = game.enemies.filter(e => e.alive);
+            
+            checkCollisions();
+            updateParticles();
+            
+            if (game.flashTimer > 0) game.flashTimer--;
+            
+            if (game.enemies.length === 0 && game.enemiesRemaining === 0) {
+                game.state = 'warp';
+                audio.playLevelComplete();
+            }
+            
+            if (!game.player.alive && game.player.deathTimer > 60) {
+                game.lives--;
+                if (game.lives <= 0) {
+                    game.state = 'gameOver';
+                    if (game.score > game.highScore) {
+                        game.highScore = game.score;
+                        localStorage.setItem('tempestHighScore', game.highScore);
+                    }
+                } else {
+                    game.player = new Player(game.tube);
+                    game.superzappers = Math.min(game.superzappers + 1, 2);
+                }
+            }
+        }
+        
+        function updateWarp() {
+            game.warpProgress += 0.01;
+            
+            game.spikes.forEach(spike => {
+                if (spike.lane === game.player.lane && game.warpProgress > (1 - spike.length) && game.warpProgress < 1) {
+                    game.player.die();
+                    game.state = 'playing';
+                }
+            });
+            
+            if (game.warpProgress >= 1) {
+                game.level++;
+                game.superzappers = Math.min(game.superzappers + 1, 2);
+                startLevel();
+                game.state = 'playing';
+            }
+        }
+        
+        // ============================================
+        // RENDERING
+        // ============================================
+        
+        function drawTitle() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const demoTube = new Tube(Math.floor(Date.now() / 3000) % 16 + 1);
+            ctx.globalAlpha = 0.3;
+            demoTube.draw();
+            ctx.globalAlpha = 1;
+            
+            ctx.fillStyle = '#0ff';
+            ctx.font = '64px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = '#0ff';
+            ctx.fillText('TEMPEST', canvas.width/2, 200);
+            
+            ctx.fillStyle = '#ff0';
+            ctx.font = '32px "Press Start 2P"';
+            ctx.shadowColor = '#ff0';
+            ctx.fillText('2025', canvas.width/2, 260);
+            
+            ctx.shadowBlur = 0;
+            
+            if (!game.levelSelectMode) {
+                ctx.fillStyle = '#fff';
+                ctx.font = '16px "Press Start 2P"';
+                ctx.fillText('PRESS SPACE TO START', canvas.width/2, 450);
+            } else {
+                ctx.fillStyle = '#fff';
+                ctx.font = '16px "Press Start 2P"';
+                ctx.fillText('SELECT LEVEL', canvas.width/2, 400);
+                
+                ctx.fillStyle = '#ff0';
+                ctx.font = '32px "Press Start 2P"';
+                ctx.fillText('< ' + game.selectedLevel + ' >', canvas.width/2, 460);
+                
+                ctx.fillStyle = '#0f0';
+                ctx.font = '12px "Press Start 2P"';
+                ctx.fillText('PRESS SPACE TO BEGIN', canvas.width/2, 520);
+            }
+            
+            ctx.fillStyle = '#f0f';
+            ctx.font = '14px "Press Start 2P"';
+            ctx.fillText('HIGH SCORE: ' + game.highScore, canvas.width/2, 600);
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px "Press Start 2P"';
+            ctx.fillText('ORIGINAL BY ATARI 1981', canvas.width/2, 700);
+        }
+        
+        function drawHUD() {
+            ctx.fillStyle = '#ff0';
+            ctx.font = '16px "Press Start 2P"';
+            ctx.textAlign = 'left';
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = '#ff0';
+            ctx.fillText('SCORE: ' + game.score, 20, 30);
+            
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#0ff';
+            ctx.shadowColor = '#0ff';
+            ctx.fillText('LEVEL ' + game.level, canvas.width/2, 30);
+            
+            ctx.textAlign = 'right';
+            
+            ctx.fillStyle = '#ff0';
+            for (let i = 0; i < game.lives; i++) {
+                ctx.fillText('\u2666', canvas.width - 20 - i * 25, 30);
+            }
+            
+            ctx.fillStyle = '#0f0';
+            ctx.font = '14px "Press Start 2P"';
+            for (let i = 0; i < game.superzappers; i++) {
+                ctx.fillText('Z', canvas.width - 20 - i * 25, 55);
+            }
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawGame() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            if (game.flashTimer > 0) {
+                ctx.fillStyle = 'rgba(255, 255, 255, ' + (game.flashTimer / 20) + ')';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            game.tube.draw();
+            drawSpikes();
+            game.enemies.forEach(e => e.draw());
+            game.bullets.forEach(b => b.draw());
+            game.player.draw();
+            drawParticles();
+            drawHUD();
+        }
+        
+        function drawWarp() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.save();
+            ctx.translate(canvas.width/2, canvas.height/2);
+            const scale = 1 + game.warpProgress * 5;
+            ctx.scale(scale, scale);
+            ctx.translate(-canvas.width/2, -canvas.height/2);
+            ctx.globalAlpha = 1 - game.warpProgress;
+            game.tube.draw();
+            drawSpikes();
+            ctx.restore();
+            
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 20; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 100 + Math.random() * 300;
+                ctx.beginPath();
+                ctx.moveTo(canvas.width/2 + Math.cos(angle) * dist, canvas.height/2 + Math.sin(angle) * dist);
+                ctx.lineTo(canvas.width/2 + Math.cos(angle) * (dist + 50), canvas.height/2 + Math.sin(angle) * (dist + 50));
+                ctx.stroke();
+            }
+            
+            ctx.fillStyle = '#0ff';
+            ctx.font = '32px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#0ff';
+            ctx.fillText('LEVEL ' + (game.level + 1), canvas.width/2, canvas.height/2);
+            ctx.shadowBlur = 0;
+            
+            drawHUD();
+        }
+        
+        function drawGameOver() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#f00';
+            ctx.font = '48px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#f00';
+            ctx.fillText('GAME OVER', canvas.width/2, 300);
+            
+            ctx.fillStyle = '#ff0';
+            ctx.font = '24px "Press Start 2P"';
+            ctx.shadowColor = '#ff0';
+            ctx.fillText('SCORE: ' + game.score, canvas.width/2, 380);
+            
+            if (game.score >= game.highScore) {
+                ctx.fillStyle = '#0f0';
+                ctx.shadowColor = '#0f0';
+                ctx.fillText('NEW HIGH SCORE!', canvas.width/2, 430);
+            }
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '16px "Press Start 2P"';
+            ctx.shadowBlur = 0;
+            ctx.fillText('PRESS SPACE TO CONTINUE', canvas.width/2, 520);
+        }
+        
+        // ============================================
+        // MAIN LOOP
+        // ============================================
+        
+        function gameLoop() {
+            switch(game.state) {
+                case 'title':
+                    drawTitle();
+                    break;
+                case 'playing':
+                    updateGame();
+                    drawGame();
+                    break;
+                case 'warp':
+                    updateWarp();
+                    drawWarp();
+                    break;
+                case 'gameOver':
+                    drawGameOver();
+                    break;
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        gameLoop();
+        
+        setInterval(() => {
+            if (game.state === 'playing') {
+                audio.playAmbient();
+            }
+        }, 3000);
+    </script>
+</body>
+</html>
