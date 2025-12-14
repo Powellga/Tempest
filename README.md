@@ -6,6 +6,8 @@ A faithful HTML5 recreation of the classic 1981 Atari Tempest arcade game.
 
 Tempest 2025 brings the iconic vector arcade shooter to modern web browsers while preserving the authentic look, feel, and challenge of the original. Experience the same glowing neon graphics, pulsing synthesized sounds, and intense tube-crawling action that made Tempest a legend.
 
+Play it here: https://powellga.github.io/Tempest/
+
 ## Features
 
 - **Authentic Vector Graphics** — Glowing neon lines rendered on HTML5 Canvas, capturing the distinctive CRT aesthetic
